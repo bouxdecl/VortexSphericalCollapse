@@ -37,3 +37,8 @@ dist/
 # Ignore everything inside output/
 outputs/*
 !outputs/.gitkeep
+
+tests/*
+!outputs/.gitkeep
+
+.github/*
