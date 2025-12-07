@@ -1,3 +1,3 @@
-from . import utils_plot
+from . import utils_plots
 
-__all__ = ["utils_plot"]
+__all__ = ["utils_plots"]
