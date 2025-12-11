@@ -33,7 +33,7 @@ def pressure_from_conservatives(rho, Etot, v1, v2, v3, gamma = 5/3):
 
 
 
-def collapse_param_decomposition(R, Lz):
+def collapse_param_decomposition(R, Lz, R_0=1.0, Lz_0=1.0):
     """
     Decompose collapse diagnostics into scale and anisotropy parameters.
 
@@ -53,7 +53,11 @@ def collapse_param_decomposition(R, Lz):
         Collapse global param R as a function of time.
     Lz : ndarray of shape (Nt,)
         Collapse global param Lz as a function of time.
-
+    R_0 : float, optional
+        Initial value of R. Default is 1.0.
+    Lz_0 : float, optional
+        Initial value of Lz. Default is 1.0.
+        
     Returns
     -------
     S : ndarray of shape (Nt,)
@@ -64,13 +68,12 @@ def collapse_param_decomposition(R, Lz):
     Raises
     ------
     ValueError
-        If ``R`` and ``Lz`` do not have the same shape.
+        If ``R`` and ``Lz`` are not positive.
     """
-    if R.shape != Lz.shape:
-        raise ValueError("R and Lz must have the same shape.")
-
-    S = (R/R[0]**2 * Lz/Lz[0])**(1/3)
-    alpha = (R/R[0]) / (Lz/Lz[0])
+    if np.any(R <= 0) or np.any(Lz <= 0):
+        raise ValueError("R and Lz must be positive")
+    S = ( (R/R_0)**2 * Lz/Lz_0)**(1/3)
+    alpha = ( (R/R_0) / (Lz/Lz_0) )**(1/3)
     return S, alpha
 
 

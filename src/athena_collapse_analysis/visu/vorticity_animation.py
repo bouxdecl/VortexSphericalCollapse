@@ -12,19 +12,12 @@ from athena_collapse_analysis.utils import collapse_param_decomposition
 from athena_collapse_analysis.io.ath_io import get_hdf_files, open_hdf_files_with_collapse
 
 
-def ddx_4th(f, d, axis=0):
-    """
-    4th-order centered finite difference along a given axis.
-    """
-    return (-np.roll(f, -2, axis=axis)
-            + 8*np.roll(f, -1, axis=axis)
-            - 8*np.roll(f,  1, axis=axis)
-            +   np.roll(f,  2, axis=axis)) / (12*d)
-
 
 def make_vorticity_movie(path_simu, outname=None,
                          vort_type="simulation",
-                         crop=None):
+                         crop=None,
+                         vmin=0.0, vmax=None, cmap='RdBu_r',
+                         nz_slice=0, fps=10, dpi=150):
     """
     Create a vorticity movie from a folder of Athena++ snapshots.
 
@@ -54,35 +47,27 @@ def make_vorticity_movie(path_simu, outname=None,
     x = data0["x1"]
     y = data0["x2"]
     Nz = len(data0["x3"])
-    midz = Nz // 2
+    midz = nz_slice if nz_slice is not None else (Nz // 2)
 
-    dx = x[1]-x[0]
-    dy = y[1]-y[0]
+    dx = x[1] - x[0]
+    dy = y[1] - y[0]
 
     # -------------------------------
     # 3. Prepare figure
     # -------------------------------
-    fig, ax = plt.subplots(figsize=(6,5))
-    dummy = np.zeros((len(x), len(y)))
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6), constrained_layout=True)
+    cbar = None
 
-    # Initialize pcolormesh
-    Xgrid, Ygrid = np.meshgrid(y, x)
-    pc = ax.pcolormesh(Xgrid, Ygrid, dummy, cmap='RdBu_r', shading='auto')
-    cbar = plt.colorbar(pc, ax=ax)
-    cbar.set_label("vorticity")
-
-    text = ax.text(0.02, 0.95, "", transform=ax.transAxes, color="white")
-
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_aspect('equal')
 
     # -------------------------------
     # 4. Init function
     # -------------------------------
     def init():
-        pc.set_array(dummy.ravel())
-        text.set_text("")
-        return pc, text
+        # nothing to initialise — each frame clears and redraws
+        return []
 
     # -------------------------------
     # 5. Update function
@@ -90,14 +75,14 @@ def make_vorticity_movie(path_simu, outname=None,
     def update(i):
         file_i = files[i]
         print(f"[{i+1}/{Nframes}] Loading {file_i}")
-        data = open_hdf_files_with_collapse(path_simu, [file_i], read_every=1)
+        data = open_hdf_files_with_collapse(path_simu, [file_i])
 
         vx = data["v1"][0, :, :, midz]
         vy = data["v2"][0, :, :, midz]
-        t  = data["time"][0]
+        t = data["time"][0]
 
-        dvy_dx = ddx_4th(vy, dx, axis=0)
-        dvx_dy = ddx_4th(vx, dy, axis=1)
+        dvy_dx = np.gradient(vy, dx, axis=0)
+        dvx_dy = np.gradient(vx, dy, axis=1)
 
         # -------------------------------
         # Compute vorticity
@@ -120,7 +105,7 @@ def make_vorticity_movie(path_simu, outname=None,
 
             # Rescaled coordinates
             Xplot = x * alpha**(-3/2)
-            Yplot = y * alpha**( 3/2)
+            Yplot = y * alpha**(3/2)
 
         else:
             raise ValueError("vort_type must be 'simulation' or 'physical'.")
@@ -128,35 +113,63 @@ def make_vorticity_movie(path_simu, outname=None,
         # -------------------------------
         # Crop if requested
         # -------------------------------
+        # -------------------------------
+        # Crop if requested (find index ranges on 1D coords)
+        # -------------------------------
         if crop is not None:
-            xmin, xmax, ymin, ymax = crop
-            mask_x = (Xplot >= xmin) & (Xplot <= xmax)
-            mask_y = (Yplot >= ymin) & (Yplot <= ymax)
-            vort_plot = vort[mask_x][:, mask_y]
-            Xplot = Xplot[mask_x]
-            Yplot = Yplot[mask_y]
+            try:
+                xmin, xmax, ymin, ymax = crop
+            except Exception:
+                raise ValueError("crop must be a 4-tuple: (xmin, xmax, ymin, ymax)")
+
+            ix = np.where((Xplot >= xmin) & (Xplot <= xmax))[0]
+            iy = np.where((Yplot >= ymin) & (Yplot <= ymax))[0]
+            if ix.size == 0 or iy.size == 0:
+                raise ValueError(
+                    f"crop region yields empty selection: x in [{xmin},{xmax}], y in [{ymin},{ymax}]"
+                )
+            Xplot = Xplot[ix]
+            Yplot = Yplot[iy]
+            vort_plot = vort[np.ix_(ix, iy)]
         else:
             vort_plot = vort
 
         # -------------------------------
-        # Update pcolormesh
+        # Determine color range like single-plot function
         # -------------------------------
-        pc.set_array(vort_plot.ravel())
-        vmax = np.max(np.abs(vort_plot))
-        pc.set_clim(-vmax, vmax)
+        vmin_plot = 0.0 if vmin is None else vmin
+        vmax_plot = np.max(vort_plot) if vmax is None else vmax
+        if vmax_plot <= vmin_plot:
+            vmax_plot = np.max(np.abs(vort_plot))
+            vmin_plot = -vmax_plot
 
-        # Update meshgrid for axes scaling if rescaled
-        pc.set_offsets(np.c_[Yplot.repeat(len(Xplot)), np.tile(Xplot, len(Yplot))])
-        ax.set_xlim(Yplot.min(), Yplot.max())
-        ax.set_ylim(Xplot.min(), Xplot.max())
+        # -------------------------------
+        # Clear axis and draw
+        # -------------------------------
+        nonlocal cbar
+        ax.clear()
+        pc = ax.pcolormesh(Xplot, Yplot, vort_plot.T,
+                           cmap=cmap, vmin=vmin_plot, vmax=vmax_plot,
+                           shading='auto')
+
+        # manage colorbar (remove old one if present)
+        if cbar is not None:
+            try:
+                cbar.remove()
+            except Exception:
+                pass
+        cbar = fig.colorbar(pc, ax=ax)
+        cbar.set_label('vorticity')
 
         if vort_type == "simulation":
-            ax.set_title(f"Simulation Vorticity")
-            text.set_text(f"t = {t:.3f}")
-        if vort_type == "physical":
-            ax.set_title(f"Physical Vorticity (rescaled coords)")
-            text.set_text(f"t = {t:.3f}, S={S:.3f}, α={alpha:.3f}")
-        return pc, text
+            ax.set_title(f'vorticity (simulation) at t = {t:.3f}')
+        else:
+            ax.set_title(f'vorticity (physical) at t = {t:.3f}, '
+                         f'S={S:.3f}, α={alpha:.3f}')
+
+        ax.set_xlabel('x')
+        ax.set_ylabel('y')
+        ax.set_aspect('equal')
 
     # -------------------------------
     # 6. Create animation
@@ -173,22 +186,11 @@ def make_vorticity_movie(path_simu, outname=None,
 
 
 
-
-
-
 if __name__ == "__main__":
     from athena_collapse_analysis.config import RAW_DIR
     # Example simulation path
     path_simu = os.path.join(RAW_DIR, "typical_simu_20251311/")
 
-    # --- Test that folder exists and contains files ---
-    assert os.path.exists(path_simu), f"Simulation path does not exist: {path_simu}"
-    files = get_hdf_files(path_simu)
-    assert len(files) > 0, f"No .athdf files found in: {path_simu}"
-    print(f"Found {len(files)} snapshot files in {path_simu}")
-
     # --- Make the vorticity movie ---
     make_vorticity_movie(path_simu, outname="omegaTilda_movie.mp4",
                          vort_type="physical", crop=None)
-
-
