@@ -1,6 +1,18 @@
 #!/usr/bin/env python3
 """
-Generate a vorticity movie from Athena++ .athdf snapshots.
+Vorticity movie generator for Athena++ snapshots.
+
+This module produces an MP4 movie showing the z-component of the
+vorticity on a chosen midplane (or any `nz_slice`). It supports two
+display modes:
+
+- `vort_type='simulation'`: raw simulation vorticity ω = ∂v_y/∂x − ∂v_x/∂y
+- `vort_type='physical'`: rescaled physical vorticity using collapse
+    parameters (S, α) and rescaled coordinates.
+
+The movie routine mirrors the single-frame plotting conventions used
+in the visualization helpers (coordinate ordering, transpose for
+display, symmetric color scaling, and optional cropping).
 """
 
 import os
@@ -23,11 +35,33 @@ def make_vorticity_movie(path_simu, outname=None,
 
     Parameters
     ----------
-    vort_type : str
-        "simulation" → ω = dv_y/dx - dv_x/dy
-        "physical"   → ω_phys using metric coefficients and rescaled coords
+    path_simu : str
+        Path to the simulation raw directory containing .athdf files.
+    outname : str or None
+        Output movie filename. If None a default name is used.
+    vort_type : {"simulation", "physical"}
+        Calculation mode: 'simulation' uses raw derivatives; 'physical'
+        applies metric factors and rescaled coordinates.
     crop : tuple or None
-        (xmin, xmax, ymin, ymax) in rescaled coordinates. If None → full domain.
+        (xmin, xmax, ymin, ymax) in plotting coordinates. If None the
+        full domain is shown (for physical mode a global rescaled extent
+        is computed and used for a consistent view across frames).
+    vmin, vmax : float or None
+        Color scale limits. Default vmin=0.0, vmax=None (uses data-driven
+        maximum); if vmax <= vmin the code falls back to a symmetric
+        [-maxabs, maxabs] range.
+    cmap : str
+        Matplotlib colormap for the pcolormesh.
+    nz_slice : int
+        Index of the z-slice to plot (midplane by default).
+    fps : int
+        Frames per second for the output movie.
+    dpi : int
+        Output resolution (used for the saved movie frames).
+
+    Returns
+    -------
+    None
     """
 
     if outname is None:
@@ -47,10 +81,13 @@ def make_vorticity_movie(path_simu, outname=None,
     x = data0["x1"]
     y = data0["x2"]
     Nz = len(data0["x3"])
+    # choose the z-index to slice (use provided or use center)
     midz = nz_slice if nz_slice is not None else (Nz // 2)
 
+    # grid spacing in each in-plane direction
     dx = x[1] - x[0]
     dy = y[1] - y[0]
+
 
     # -------------------------------
     # 3. Prepare figure
@@ -61,6 +98,34 @@ def make_vorticity_movie(path_simu, outname=None,
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     ax.set_aspect('equal')
+
+    # For physical mode without cropping, compute global rescaled extent 
+    # for consistent plot limits across frames
+    if crop is None and vort_type == "physical":
+        Xmin_global = +np.inf
+        Xmax_global = -np.inf
+        Ymin_global = +np.inf
+        Ymax_global = -np.inf
+
+        for f in files:
+            dat = open_hdf_files_with_collapse(path_simu, [f])
+            R = dat['Rglobal'][0]
+            Lz = dat['Lzglobal'][0]
+            Sarr, aarr = collapse_param_decomposition(np.array([R]), np.array([Lz]))
+            S, alpha = Sarr[0], aarr[0]
+
+            Xtmp = x * alpha**(-3/2)
+            Ytmp = y * alpha**(+3/2)
+
+            Xmin_global = min(Xmin_global, Xtmp.min())
+            Xmax_global = max(Xmax_global, Xtmp.max())
+            Ymin_global = min(Ymin_global, Ytmp.min())
+            Ymax_global = max(Ymax_global, Ytmp.max())
+
+        print("Global rescaled extent:")
+        print("X:", Xmin_global, Xmax_global)
+        print("Y:", Ymin_global, Ymax_global)
+
 
     # -------------------------------
     # 4. Init function
@@ -81,6 +146,7 @@ def make_vorticity_movie(path_simu, outname=None,
         vy = data["v2"][0, :, :, midz]
         t = data["time"][0]
 
+        # compute spatial derivatives: ∂v_y/∂x and ∂v_x/∂y
         dvy_dx = np.gradient(vy, dx, axis=0)
         dvx_dy = np.gradient(vx, dy, axis=1)
 
@@ -113,9 +179,6 @@ def make_vorticity_movie(path_simu, outname=None,
         # -------------------------------
         # Crop if requested
         # -------------------------------
-        # -------------------------------
-        # Crop if requested (find index ranges on 1D coords)
-        # -------------------------------
         if crop is not None:
             try:
                 xmin, xmax, ymin, ymax = crop
@@ -135,7 +198,8 @@ def make_vorticity_movie(path_simu, outname=None,
             vort_plot = vort
 
         # -------------------------------
-        # Determine color range like single-plot function
+        # Determine color range (defaults: vmin=0, vmax=data-driven)
+        # Falls back to symmetric range if user-provided limits are invalid
         # -------------------------------
         vmin_plot = 0.0 if vmin is None else vmin
         vmax_plot = np.max(vort_plot) if vmax is None else vmax
@@ -144,15 +208,30 @@ def make_vorticity_movie(path_simu, outname=None,
             vmin_plot = -vmax_plot
 
         # -------------------------------
-        # Clear axis and draw
+        # Clear axis and draw new frame
         # -------------------------------
         nonlocal cbar
-        ax.clear()
+
+        ax.clear()  # remove previous artists
+
+        # set a fixed viewing window for physical coordinates so the
+        # movie doesn't jump between frames; for simulation mode we
+        # leave the axes autoscaled unless a crop was requested
+        if vort_type == "physical":
+            if crop is not None:
+                xmin, xmax, ymin, ymax = crop
+                ax.set_xlim(xmin, xmax)
+                ax.set_ylim(ymin, ymax)
+            else:
+                ax.set_xlim(Xmin_global, Xmax_global)
+                ax.set_ylim(Ymin_global, Ymax_global)
+
+        # draw vorticity (transpose to match display orientation)
         pc = ax.pcolormesh(Xplot, Yplot, vort_plot.T,
                            cmap=cmap, vmin=vmin_plot, vmax=vmax_plot,
                            shading='auto')
 
-        # manage colorbar (remove old one if present)
+        # replace colorbar
         if cbar is not None:
             try:
                 cbar.remove()
@@ -161,15 +240,19 @@ def make_vorticity_movie(path_simu, outname=None,
         cbar = fig.colorbar(pc, ax=ax)
         cbar.set_label('vorticity')
 
+        # --- add title
         if vort_type == "simulation":
             ax.set_title(f'vorticity (simulation) at t = {t:.3f}')
         else:
-            ax.set_title(f'vorticity (physical) at t = {t:.3f}, '
-                         f'S={S:.3f}, α={alpha:.3f}')
-
+            ax.set_title(f'vorticity (physical) \n at t = {t:.3f}, '
+                        f'S={S:.3f}, α={alpha:.3f}')
         ax.set_xlabel('x')
         ax.set_ylabel('y')
-        ax.set_aspect('equal')
+
+        if crop is not None and vort_type == "physical":
+            ax.set_aspect('equal', adjustable='box')
+        else:
+            ax.set_aspect('equal')
 
     # -------------------------------
     # 6. Create animation
@@ -180,7 +263,7 @@ def make_vorticity_movie(path_simu, outname=None,
                                   blit=False)
 
     print("Saving movie...")
-    ani.save(outname, writer='ffmpeg', dpi=150)
+    ani.save(outname, writer='ffmpeg', dpi=dpi, fps=fps)
     print(f"Movie saved: {outname}")
 
 
@@ -192,5 +275,11 @@ if __name__ == "__main__":
     path_simu = os.path.join(RAW_DIR, "typical_simu_20251311/")
 
     # --- Make the vorticity movie ---
-    make_vorticity_movie(path_simu, outname="omegaTilda_movie.mp4",
-                         vort_type="physical", crop=None)
+
+    make_vorticity_movie(path_simu, outname="omegaTilda_movie_simulation.mp4",
+                         vort_type="simulation")
+    
+    #make_vorticity_movie(path_simu, outname="omegaTilda_movie_physical.mp4",
+    #                     vort_type="physical")
+    #make_vorticity_movie(path_simu, outname="omegaTilda_movie_physical_crop.mp4",
+    #                     vort_type="physical", crop=(-1.5, 1.5, -1.5, 1.5))
