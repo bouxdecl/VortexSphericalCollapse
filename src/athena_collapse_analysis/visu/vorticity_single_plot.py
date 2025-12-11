@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-Simple vorticity plotting utilities.
+Vorticity plot generator for a single Athena++ file.
 
-Key behavior:
-- vorticity is computed as omega = d(v_y)/dx - d(v_x)/dy using
-    `numpy.gradient` with the coordinate arrays.
-- default color range uses `vmin=0` and `vmax=np.max(data)` unless the
-    caller overrides them; an invalid range (vmax <= vmin) falls back to a
-    symmetric [-maxabs, +maxabs] range.
+
+Two display modes:
+
+- `vort_type='simulation'`: raw simulation vorticity ω = ∂v_y/∂x − ∂v_x/∂y
+- `vort_type='physical'`: rescaled physical vorticity using collapse
+    parameters (S, α) and rescaled coordinates.
+
+Optional cropping can be applied to zoom in on a specific region.
+vmin and vmax control the color scale limits.
 """
 
 import os
@@ -24,7 +27,7 @@ from athena_collapse_analysis.io.ath_io import (
 from athena_collapse_analysis.utils import collapse_param_decomposition
 
 
-def plot_one_vorticity(path_file, file, show=True, save_path=None,
+def vorticity_single_plot(path_file, file, show=True, save_path=None,
                        vmin=0.0, vmax=None, cmap='RdBu_r',
                        nz_slice=0, vort_type="simulation", crop=None):
     """
@@ -151,4 +154,4 @@ if __name__ == "__main__":
     path_simu = os.path.join(RAW_DIR, "typical_simu_20251311/")
     files = get_hdf_files(path_simu)
 
-    plot_one_vorticity(path_simu, files[-1], vort_type="physical", crop=(-1, 1, -1, 1))
+    open_hdf_files_with_collapse(path_simu, files[-1], vort_type="physical", crop=(-1, 1, -1, 1))

@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-Vorticity movie generator for Athena++ snapshots.
+Vorticity movie generator from a folder with Athena++ outputs (one .hst and the .athdf dump)
 
 This module produces an MP4 movie showing the z-component of the
-vorticity on a chosen midplane (or any `nz_slice`). It supports two
-display modes:
+vorticity on a chosen midplane (or any `nz_slice`). 
+
+Two display modes:
 
 - `vort_type='simulation'`: raw simulation vorticity ω = ∂v_y/∂x − ∂v_x/∂y
 - `vort_type='physical'`: rescaled physical vorticity using collapse
     parameters (S, α) and rescaled coordinates.
 
-The movie routine mirrors the single-frame plotting conventions used
-in the visualization helpers (coordinate ordering, transpose for
-display, symmetric color scaling, and optional cropping).
+A crop region can be specified for zoomed-in views. In that case the movie shows only
+the selected area.
+vmin and vmax control the color scale limits.
 """
 
 import os
@@ -265,7 +266,6 @@ def make_vorticity_movie(path_simu, outname=None,
     print("Saving movie...")
     ani.save(outname, writer='ffmpeg', dpi=dpi, fps=fps)
     print(f"Movie saved: {outname}")
-
 
 
 

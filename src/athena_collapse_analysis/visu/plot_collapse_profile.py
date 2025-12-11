@@ -101,4 +101,3 @@ if __name__ == "__main__":
     from athena_collapse_analysis.config import RAW_DIR
     path = os.path.join(RAW_DIR, "typical_simu_20251311/")
     plot_collapse_profiles(path)
-    

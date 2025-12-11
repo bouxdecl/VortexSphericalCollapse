@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Plot initial 1D profiles (vorticity, vy, rotation period) from Athena++ data.
+Plot initial 1D profiles (vorticity, vy, rotation period) from a Athena++ athdf file.
+As the initial conditions are axisymmetric, profiles are taken along x at mid-y.
 """
 
 import os
