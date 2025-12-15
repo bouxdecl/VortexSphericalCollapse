@@ -273,7 +273,7 @@ if __name__ == "__main__":
     make_vorticity_movie(path_simu, outname="omegaTilda_movie_simulation.mp4",
                          vort_type="simulation")
     
-    #make_vorticity_movie(path_simu, outname="omegaTilda_movie_physical.mp4",
-    #                     vort_type="physical")
-    #make_vorticity_movie(path_simu, outname="omegaTilda_movie_physical_crop.mp4",
-    #                     vort_type="physical", crop=(-1.5, 1.5, -1.5, 1.5))
+    make_vorticity_movie(path_simu, outname="omegaTilda_movie_physical.mp4",
+                         vort_type="physical")
+    make_vorticity_movie(path_simu, outname="omegaTilda_movie_physical_crop.mp4",
+                         vort_type="physical", crop=(-1.5, 1.5, -1.5, 1.5))

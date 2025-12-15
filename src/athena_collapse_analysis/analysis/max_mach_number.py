@@ -27,7 +27,7 @@ from athena_collapse_analysis.io.ath_io import (
 # Core routine
 # ============================================================
 
-def compute_max_mach_number(path_simu, files, gamma=5/3, cs_0=1.0, nz_slice=None, verbose=False):
+def compute_Mach_number(path_simu, files, gamma=5/3, cs_0=1.0, nz_slice=None, verbose=False):
     """
     Compute maximum Mach number file by file.
 
@@ -111,7 +111,7 @@ def compute_max_mach_number(path_simu, files, gamma=5/3, cs_0=1.0, nz_slice=None
 # Plotting
 # ============================================================
 
-def plot_max_mach_number(time, Mach_max, Mach_x, Mach_y, show=True, save_path=None):
+def plot_mach_number(time, Mach_max, Mach_x, Mach_y, show=True, save_path=None):
     """
     Plot maximum Mach number vs time.
     """
@@ -150,11 +150,11 @@ if __name__ == "__main__":
     path_simu = os.path.join(RAW_DIR, "typical_simu_20251311/")
     files = get_hdf_files(path_simu)
 
-    time, Mach_x, Mach_y, Mach_max = compute_max_mach_number(
+    time, Mach_x, Mach_y, Mach_max = compute_Mach_number(
         path_simu,
         files,
         nz_slice=None,   # or e.g. nz_slice=0
         verbose=True
     )
 
-    plot_max_mach_number(time, Mach_max, Mach_x, Mach_y)
+    plot_mach_number(time, Mach_max, Mach_x, Mach_y)
